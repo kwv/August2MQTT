@@ -11,11 +11,14 @@ WORKDIR /app
 COPY requirements.txt /app/
 # Install any needed packages specified in requirements.txt 
 RUN /venv/bin/pip install --no-cache-dir --requirement /app/requirements.txt
-COPY . /app/
 
 
 FROM base-image AS runtime-image
 WORKDIR /app
-COPY --from=build-image /app /app
 COPY --from=build-image /venv /venv
+COPY ./bledist/ /app/bledist/
+COPY ./config/ /app/config/
+COPY ./augustpy/ /app/augustpy/
+COPY ./mqtt_august_bridge.py /app/
+
 CMD ["/venv/bin/python3", "/app/mqtt_august_bridge.py"]

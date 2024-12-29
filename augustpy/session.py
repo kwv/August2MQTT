@@ -2,6 +2,10 @@ import bluepy.btle as btle
 import threading
 from Cryptodome.Cipher import AES
 from . import util
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 class SessionDelegate(btle.DefaultDelegate):
@@ -14,24 +18,24 @@ class SessionDelegate(btle.DefaultDelegate):
     def handleNotification(self, cHandle, data):
         # if self.data is not None:
         #     return
-        print("Notification/Indication received!!!")
+        logging.debug("Notification/Indication received!!!")
 
-        print("Receiving response: " + data.hex())
-        print("Notification handle: " + str(cHandle))
+        logging.debug("Receiving response: %s", data.hex())
+        logging.debug("Notification handle: %s", str(cHandle))
 
         data = self.session.decrypt(data)
-        print("Decrypted response: " + data.hex())        
+        logging.debug("Decrypted response: %s", data.hex())        
         self.session._validate_response(data)
         self.data = data
         self.cHandle = cHandle
 
-        # print("HANDLE:::",self.session.delegate.cHandle)
+        # logging.info("HANDLE:::",self.session.delegate.cHandle)
         # temp = {} #dictionary
         # temp['cHandle'] = self.session.delegate.cHandle
         # temp['data'] = self.session.delegate.data
         # self.session.incomingData.append(temp)
         # if(self.session.delegate.cHandle != None):
-        #     print("data incoming!")
+        #     logging.info("data incoming!")
         #     self.session.dataReady.set()
 
 
@@ -88,17 +92,17 @@ class Session:
         command[0x03] = checksum
 
     def _validate_response(self, response: bytearray):
-        print("Response simple checksum: " + str(util._simple_checksum(response)))
+        logging.debug("Response simple checksum: %s", str(util._simple_checksum(response)))
         if util._simple_checksum(response) != 0:
             #raise Exception("Simple checksum mismatch")
-            print("Simple checksum mismatch")
+            logging.warning("Simple checksum mismatch")
 
         if response[0x00] != 0xbb and response[0x00] != 0xaa:
             #raise Exception("Incorrect flag in response")
-            print("Incorrect flag in response")
+            logging.warning("Incorrect flag in response")
 
     def _write(self, command: bytearray):
-        print("Writing command: " + command.hex())
+        logging.debug("Writing command: %s", command.hex())
 
         # NOTE: The last two bytes are not encrypted
         # General idea seems to be that if the last byte
@@ -112,8 +116,8 @@ class Session:
             #cipherText[0x11:0x12] = command[0x11:0x12]
             util._copy(command, cipherText)
 
-        print("Encrypted command: " + command.hex())
-        #print("Encrypted command: " + cipherText.hex())
+        logging.debug("Encrypted command: %s", command.hex())
+        #logging.info("Encrypted command: %s", cipherText.hex())
 
         #delegate = SessionDelegate(self)    
         
@@ -134,8 +138,8 @@ class Session:
             if(self.delegate.data is None and self.peripheral.waitForNotifications(5) is False):
             #while(delegate.data is None and self.peripheral.waitForNotifications(2) is False):
                 #raise Exception("Notification timed out")
-                print("Notification timed out")
-                #print(self.write_characteristic.supportsRead())
+                logging.warning("Notification timed out")
+                #logging.info(self.write_characteristic.supportsRead())
                 #self.peripheral.withDelegate(delegate)
                 #self.write_characteristic.write(command, True)
                 return None
@@ -158,9 +162,9 @@ class Session:
         #while(delegate.data is None and self.peripheral.waitForNotifications(2) is False):
             #raise Exception("Notification timed out")
            
-            #print("Notification timed out")
+            #logging.warning("Notification timed out")
            
-            #print(self.write_characteristic.supportsRead())
+            #logging.info(self.write_characteristic.supportsRead())
             #self.peripheral.withDelegate(delegate)
             #self.write_characteristic.write(command, True)
             
@@ -170,15 +174,15 @@ class Session:
             return True
         else:
             if(self.dataReady.wait(5)): #if there is data ready
-                print("GOT NOTIFICATION EVENT!!!")
+                logging.debug("GOT NOTIFICATION EVENT!!!")
                 self.dataReady.clear()
-                print("incoming queue length:",len(self.incomingData))
+                logging.debug("incoming queue length: %s", len(self.incomingData))
                 while self.incomingData: # TODO: needs some more work....
                     dataSet = self.incomingData.pop()  
                     #if(dataSet['cHandle']==20):
                     return dataSet['data']                
             else: #timed out
-                print("Notification timed out")
+                logging.warning("Notification timed out")
                 return None
 
         #while(self.delegate.data is None):
@@ -190,7 +194,7 @@ class Session:
         #return temp
 
     def _write_nr(self, command: bytearray):
-        print("Writing command: " + command.hex())
+        logging.debug("Writing command: %s", command.hex())
 
         # NOTE: The last two bytes are not encrypted
         # General idea seems to be that if the last byte
@@ -202,7 +206,7 @@ class Session:
             cipherText = self.cipher_encrypt.encrypt(plainText)
             util._copy(command, cipherText)
 
-        print("Encrypted command: " + command.hex())
+        logging.debug("Encrypted command: %s", command.hex())
 
         delegate = SessionDelegate(self)
 
@@ -247,19 +251,19 @@ class SecureSession(Session):
         util._copy(command, checksum_bytes, destLocation=0x0c)
 
     def _validate_response(self, data: bytes):
-        print("Response security checksum: " + str(util._security_checksum(data)))
+        logging.debug("Response security checksum: %s", str(util._security_checksum(data)))
         response_checksum = int.from_bytes(data[0x0c:0x10], byteorder='little', signed=False)
-        print("Response message checksum: " + str(response_checksum))
+        logging.debug("Response message checksum: %s", str(response_checksum))
         if util._security_checksum(data) != response_checksum:
             #raise Exception("Security checksum mismatch")
-            print("Security checksum mismatch")
+            logging.warning("Security checksum mismatch")
     
     def execute(self, command: bytearray):
         self._write_checksum(command)
         return self._write(command)
 
     def _write(self, command: bytearray):
-        print("Writing command: " + command.hex())
+        logging.debug("Writing command: %s", command.hex())
 
         # NOTE: The last two bytes are not encrypted
         # General idea seems to be that if the last byte
@@ -270,7 +274,7 @@ class SecureSession(Session):
             cipherText = self.cipher_encrypt.encrypt(plainText)
             util._copy(command, cipherText)
 
-        print("Encrypted command: " + command.hex())
+        logging.debug("Encrypted command: %s", command.hex())
 
         #delegate = SessionDelegate(self)    
         
@@ -281,8 +285,8 @@ class SecureSession(Session):
         if(self.delegate.data is None and self.peripheral.waitForNotifications(5) is False):
         #while(delegate.data is None and self.peripheral.waitForNotifications(2) is False):
             #raise Exception("Notification timed out")
-            print("Notification timed out")
-            #print(self.write_characteristic.supportsRead())
+            logging.warning("Notification timed out")
+            #logging.info(self.write_characteristic.supportsRead())
             #self.peripheral.withDelegate(delegate)
             #self.write_characteristic.write(command, True)
             return None
@@ -292,11 +296,3 @@ class SecureSession(Session):
             #return self.delegate.data
             return temp    
             #return self.delegate.data
-
-        #while(self.delegate.data is None):
-        #    True
-        #else:
-        #temp = self.delegate.data
-        #self.delegate.data = None
-        #return self.delegate.data
-        #return temp
