@@ -1,4 +1,5 @@
 {
+    "polling_interval_seconds": 600,
     "mqtt": {
         "broker_address": "192.168.0.192",
         "mqtt_user": "august",
