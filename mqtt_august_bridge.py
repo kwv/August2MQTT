@@ -76,15 +76,9 @@ client.on_connect = on_mqtt_client_connect
 client.loop_start()
 
 
-locks = []
-for lock_config in config["lock"]:
-    lock = augustpy.lock.Lock(lock_config["bluetoothAddress"], lock_config["handshakeKey"], lock_config["handshakeKeyIndex"], onStatusUpdate)
-    if "name" in lock_config:
-        lock.set_name(lock_config["name"])
-    locks.append(lock)
-if not locks:
-    raise Exception("No locks configured")
-lock = locks[0]  ##sketch AF....
+
+lock = augustpy.lock.Lock(config["lock"]["bluetoothAddress"], config["lock"]["handshakeKey"], config["lock"]["handshakeKeyIndex"], onStatusUpdate)
+lock.set_name(config["lock"]["name"])
 
 
 lockConnect()

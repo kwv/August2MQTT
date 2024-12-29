@@ -5,11 +5,9 @@
         "mqtt_user": "august",
         "mqtt_password": "lock"
     },
-    "lock": [
-        {
-            "bluetoothAddress": "0A:1B:2C:3D:4E:5F",
-            "handshakeKey": "ABCDEF0123456789ABCDEF0123456789",
-            "handshakeKeyIndex": 1
-        }
-    ]
+    "lock": {
+        "bluetoothAddress": "0A:1B:2C:3D:4E:5F",
+        "handshakeKey": "ABCDEF0123456789ABCDEF0123456789",
+        "handshakeKeyIndex": 1
+    }
 }
