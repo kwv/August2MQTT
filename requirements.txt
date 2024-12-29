@@ -1,4 +1,4 @@
 bluepy
 pycryptodomex
 paho-mqtt
-pybluez
+git+https://github.com/pybluez/pybluez.git#egg=pybluez

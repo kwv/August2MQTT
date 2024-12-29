@@ -60,12 +60,17 @@ def on_mqtt(client, userdata, message):
     #     if(lock.is_connected()):
     #         lock.getStatus()
 
+config = None
+with open("config/config.json", "r") as config_file:
+    config = json.load(config_file)
+
+
 mqtt_event = threading.Event()
 
-broker_address="192.168.0.192" # <== this is where your MQTT server IP goes. No need for the port.
-client = mqtt.Client("august_rpi") # <== this is just the name of the MQTT client. I called mine "august_rpi"
-client.username_pw_set("august", "lock") # <== use this if your MQTT server requires authentication. If not, you can comment out this whole line.
-client.connect(broker_address)
+
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1) 
+client.username_pw_set(config["mqtt"]["mqtt_user"],config["mqtt"]["mqtt_password"]) # <== use this if your MQTT server requires authentication. If not, you can comment out this whole line.
+client.connect(config["mqtt"]["broker_address"])
 
 client.publish("august/bridge/availability", "online", retain=True)
 #client.subscribe("august/lock/set")
@@ -73,17 +78,9 @@ client.on_message = on_mqtt
 client.on_connect = on_connect
 client.loop_start()
 
-config = None
-i = 0
-
-with open("config.json", "r") as config_file:
-    config = json.load(config_file)
-
-if type(config) is dict:
-    config = [config]
 
 locks = []
-for lock_config in config:
+for lock_config in config["lock"]:
     lock = augustpy.lock.Lock(lock_config["bluetoothAddress"], lock_config["handshakeKey"], lock_config["handshakeKeyIndex"])
     if "name" in lock_config:
         lock.set_name(lock_config["name"])
@@ -93,7 +90,6 @@ lock = locks[0]  ##sketch AF....
 lock._onStatusUpdate = onStatusUpdate
 
 if(lock.connect()):
-    client.publish("homeassistant/lock/L30DGX6/config", '{"name": "Front Door Lock", "state_topic": "august/lock/state", "availability_topic": "august/lock/availability", "unique_id": "L30DGX6", "command_topic": "august/lock/set"}', retain=True)
     client.publish("august/lock/availability", "online", retain=True)
     lock.getStatus()
     # client.publish("august/lock/state", lock.getStatus()) 

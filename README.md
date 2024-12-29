@@ -22,24 +22,38 @@ Update 3/8/23: Batteries lasted 6 months. No issue with drain at all.
 This code is *rough*. It works, but it ain't pretty. You will notice a ton of commented out lines, and maybe even comments from me/previous devs. But once you get it up and running, it will get the job done! 
 
 So here is how you start:
-1. Clone the repo, and start by modifying `config.json` file with the info for your lock. Follow the instructions [here](https://github.com/Friendly0Fire/augustpy#putting-it-all-together) on how to create your lock config file. 
+1. Clone the repo, and start by modifying `config.example.json` file with the info for your lock as `config.json`. Follow the instructions [here](https://github.com/Friendly0Fire/augustpy#putting-it-all-together) on how to create your lock config file. 
 
 ```
-{"bluetoothAddress": "0A:1B:2C:3D:4E:5F", "handshakeKey": "ABCDEF0123456789ABCDEF0123456789", "handshakeKeyIndex": 1}
+	"lock": [
+		{
+			"name": "Front Door",
+			"bluetoothAddress": "78:9C:85:07:12:6C",
+			"handshakeKey": "1798AF9EA2E0B3E86D94809A3483E716",
+			"handshakeKeyIndex": 1
+		}
+	]
 ```
-2. run setup.sh, which will download the required python libraries.
-3. Go into `mqtt_august_bridge.py` and enter your MQTT server details. [Start here](https://github.com/aeozyalcin/August2MQTT/blob/7c642023cf61f34ea4f855b16ca4c509ae64ce11/mqtt_august_bridge.py#L65). <== *TODO: This will eventually go into `config.json` that you configured in step 1.*
+2. enter your MQTT server details in the same `config.json` file. 
 
 ```
-broker_address="192.168.0.192" # <== this is where your MQTT server IP goes. No need for the port.
-client = mqtt.Client("august_rpi") # <== this is just the name of the MQTT client. I called mine "august_rpi"
-client.username_pw_set("august", "lock") # <== use this if your MQTT server requires authentication. If not, you can comment out this whole line.
-client.connect(broker_address)
+    "mqtt": {
+        "broker_address": "192.168.0.192",
+        "mqtt_user": "august",
+        "mqtt_password": "lock"
+    },
 ```
+3. run setup.sh, which will download the required python libraries. 
+
 4. Just run `python3 mqtt_august_bridge.py`. *You will probably need to run it as sudo, since the we need access to the BLE hardware on your host.* 
 
+## Docker alternative approach
+Alternatively, after step 2  build the docker image `docker build -t august2mqtt .` and run it `docker run -it -v ${PWD}/config:/config august2mqtt`.  If building cross platform (i.e. building on amd64, running on arm64 like a Raspberry Pi) follow 
+ [multi-platform](https://docs.docker.com/build/building/multi-platform/#install-qemu-manually)
+
+
 Things to know:
-- The bridge will listen for MQTT topic `august/lock/set` to wait for lock/unlock commands.
+- The bridge will listen for MQTT topic `august/lock/set` to wait for `LOCK` or `UNLOCK` commands.  
 - The bridge will publish to MQTT topic `august/lock/state`, when the lock reports a state change.
 - The bridge will publish to MQTT topic `august/lock/voltage`, when it gets a lock battery voltage update.
 
