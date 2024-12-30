@@ -45,12 +45,31 @@ def onCmdUpdate(state):
         lockConnect()
 
 def sendLockCmdWithResponse(query, responseHandler):
-    resp = query()
-    if(resp and responseHandler):
-        responseHandler(resp)
+    # when an error occurs we will try to reconnect to the lock, and retry the command
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            resp = query()
+            if resp and responseHandler:
+                responseHandler(resp)
+            break
+        except Exception as e:
+            logging.error(f"An error occurred sending cmd: {e}, attempt {attempt + 1} of {max_retries}")
+            if attempt < max_retries - 1:
+                lockDisconnect()
+                time.sleep(2)  # wait before retrying
+                lockConnect()
+                time.sleep(2)  # wait before retrying
+            else:
+                logging.error("Max retries reached, command failed.")
 
-def on_mqtt_client_connect(client, userdata, flags, rc):
-    client.subscribe("august/lock/set")
+def on_mqtt_client_connect(client, userdata, flags, reason_code, properties):
+    if reason_code == 0:
+        client.subscribe("august/lock/set")
+    if reason_code > 0:
+        # error processing
+        logging.error(f"MQTT connection error: {reason_code}")
+        sys.exit(1)
 
 def on_mqtt_message(client, userdata, message):
     if(str(message.payload.decode("utf-8")) == 'LOCK'):
@@ -66,9 +85,9 @@ with open("config/config.json", "r") as config_file:
 
 lock_event = threading.Event()
 
-client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1) 
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2) 
 client.username_pw_set(config["mqtt"]["mqtt_user"],config["mqtt"]["mqtt_password"]) # <== use this if your MQTT server requires authentication. If not, you can comment out this whole line.
-client.connect(config["mqtt"]["broker_address"])
+client.connect_async(config["mqtt"]["broker_address"])
 
 client.publish("august/bridge/availability", "online", retain=True)
 client.on_message = on_mqtt_message
