@@ -24,12 +24,12 @@ def onVoltageUpdate(state):
     if state:
         logging.debug(f"Bridge lock voltage: {state}")
         client.publish("august/lock/voltage", state) 
-def lockConnect():
-    if(lock.is_connected()):
+def lockConnect(force=False):
+    if(lock.is_connected() and not force):
         onAvailabilityUpdate("online")
         return True
     resp = lock.connect()
-    if(resp):
+    if(resp == True):
         logging.info(f"Bridge connected to lock: {lock.name}")
         onAvailabilityUpdate("online")
     else:
@@ -40,9 +40,9 @@ def lockDisconnect():
     onAvailabilityUpdate("offline")
 
 def onCmdUpdate(state):
-    if not state:
+    if state == False:
         lockDisconnect()
-        lockConnect()
+        lockConnect(True)
 
 def sendLockCmdWithResponse(query, responseHandler):
     # when an error occurs we will try to reconnect to the lock, and retry the command
@@ -52,13 +52,17 @@ def sendLockCmdWithResponse(query, responseHandler):
             resp = query()
             if resp and responseHandler:
                 responseHandler(resp)
-            break
+                break
+            elif resp == False:
+                logging.error(f"Command failed: {query}")
+                raise Exception(f"Command failed: {query}")
+            
         except Exception as e:
             logging.error(f"An error occurred sending cmd: {e}, attempt {attempt + 1} of {max_retries}")
             if attempt < max_retries - 1:
                 lockDisconnect()
                 time.sleep(2)  # wait before retrying
-                lockConnect()
+                lockConnect(True)
                 time.sleep(2)  # wait before retrying
             else:
                 logging.error("Max retries reached, command failed.")

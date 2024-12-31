@@ -11,16 +11,15 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class keepLockAlive(threading.Thread):
-	def __init__(self, thread_id, name, Lock, interval):
+	def __init__(self, thread_id, name, lock, interval):
 		threading.Thread.__init__(self)
 		self.thread_id = thread_id
 		self.name = name
-		self.lock = Lock
+		self.lock = lock
 		self._stop_event = threading.Event()
 		self.interval = interval
-
 	def run(self):
-		logging.info("Starting Lock Keep alive")
+		logging.warning("Starting Lock Keep alive")
 		while not self._stop_event.isSet(): #while exit flag is not set
 			self._stop_event.wait(self.interval)
 			if(not self._stop_event.isSet()):
@@ -28,15 +27,16 @@ class keepLockAlive(threading.Thread):
 					logging.debug("Sending keep alive") 
 					self.lock.getStatus()
 					#self.lock.led_G()
-				except btle.BTLEDisconnectError:
+				except Exception as e:
 					logging.warning("Lock keep alive failed. Reconnecting.")
+					self.lock.disconnect()
 					self.lock.connect()
 		logging.warning("Lock keep alive exited")	
 		#TODO: Add another event and defs setting and clearing the event to start/stop the lockalive
 
 	def stop(self):
 		self._stop_event.set()
-		logging.debug("Exit flag sent to Lock keep alive")
+		logging.warning("Exit flag sent to Lock keep alive")
 
 class notificationProcessor_thread(threading.Thread):
     def __init__(self, lock):
@@ -71,11 +71,8 @@ class notificationProcessor_thread(threading.Thread):
                         logging.debug("data incoming!")
                         self.session.dataReady.set()
         except btle.BTLEDisconnectError:
-            self.lock.conn_state = "disconnected"
-            self.lock.is_secure = False
-            self.lock.session = None
-            self.lock.peripheral = None
             logging.error("Device disconnected unexpectedly!  Reconnecting...")
+            self.lock.disconnect()
             self.lock.connect()
 
         logging.debug("Exiting notification processor thread.")
@@ -235,43 +232,41 @@ class Lock:
             #self.session.notificationProcessor = notificationProcessor_thread(self)
             #self.session.notificationProcessor.start()
             self.conn_state = "connected"
-            self.keepAlive = keepLockAlive(33, "lock keep alive",self,60)
-            # self.keepAlive.start()
+            if not hasattr(self, 'keepAlive') or not self.keepAlive.is_alive():
+                self.keepAlive = keepLockAlive(33, "lock keep alive", self, 60)
+                self.keepAlive.start()
             # blescan.hci_le_set_conn_parameters(self.socket, handle = 0x0040, min_interval = 0x0027, max_interval = 0x0028, latency = 0x000F, sup_timeout = 0x0136) # 420 ms timeout
-            blescan.hci_le_set_conn_parameters(self.socket, handle = 0x0040, min_interval = 0x0027, max_interval = 0x0028, latency = 0x001E, sup_timeout = 0x01F4) #1000ms latency, 3000 ms timeout
+            #0x0027 in ms is 39.0625ms, 0x0028 in ms is 40.625ms, 0x000F in ms is 10.625ms, 0x0136 in ms is 310.625ms
+            blescan.hci_le_set_conn_parameters(self.socket, handle = 0x0040, min_interval = 0x0027, max_interval = 0x0028, latency = 0x001E, sup_timeout = 0x0BB8) # 3000ms timeout in hex is 0x0BB8, 1000ms latency in hex is 0x001E
             logging.info("Connected to lock: %s", self.name)
             return True
-        else:
-            return False
+        return False
 
     def force_lock(self):
-        # blescan.hci_le_set_conn_parameters(self.socket, handle = 0x0040, min_interval = 0x0027, max_interval = 0x0028, latency = 0x0001, sup_timeout = 0x002A) # 420 ms timeout
+        if self.session is None:
+            raise Exception("Session is None! force_lock failed.")
         cmd = self.session.build_command(0x0b)
-        # result = self.session.execute(cmd)
 
         try:
             response = self.session.execute(cmd)
         except btle.BTLEDisconnectError:
             logging.error("Device disconnected unexpectedly during force_lock!")
-            self.is_secure = False
-            self.session = None
-            self.peripheral = None
+            self.disconnect()
             return False
 
-        # blescan.hci_le_set_conn_parameters(self.socket, handle = 0x0040, min_interval = 0x0027, max_interval = 0x0028, latency = 0x000F, sup_timeout = 0x0136) # 420 ms timeout
         return response
 
     def force_unlock(self):
-        # blescan.hci_le_set_conn_parameters(self.socket, handle = 0x0040, min_interval = 0x0027, max_interval = 0x0028, latency = 0x0001, sup_timeout = 0x002A) # 420 ms timeout
+
+        if self.session is None:
+            raise Exception("Session is None! force_unlock failed.")
         cmd = self.session.build_command(0x0a)
 
         try:
             response = self.session.execute(cmd)
         except btle.BTLEDisconnectError:
             logging.error("Device disconnected unexpectedly during force_unlock!")
-            self.is_secure = False
-            self.session = None
-            self.peripheral = None
+            self.disconnect()
             return False
 
         # blescan.hci_le_set_conn_parameters(self.socket, handle = 0x0040, min_interval = 0x0027, max_interval = 0x0028, latency = 0x000F, sup_timeout = 0x0136) # 420 ms timeout
@@ -310,7 +305,8 @@ class Lock:
         cmd[0x08] = val1
         cmd[0x09] = val2
         cmd[0x10] = 0x02
-
+        if self.session is None:
+            raise Exception("Session is None! setParam failed.")
         response = self.session.execute(cmd)
         logging.debug(response.hex())
 
@@ -321,7 +317,8 @@ class Lock:
         #cmd[0x03] = 0x0c #checksum?
         cmd[0x04] = param
         cmd[0x10] = 0x02
-
+        if self.session is None:
+            raise Exception("Session is None! getParam failed.")
         response = self.session.execute(cmd)
         logging.debug(response.hex())
 
@@ -335,12 +332,12 @@ class Lock:
 
         self.statusEvent.clear()
         try:
+            if self.session is None:
+                raise Exception("Session is None! getStatus failed.")
             response = self.session.execute(cmd)
         except btle.BTLEDisconnectError:
             logging.error("Device disconnected unexpectedly during getStatus!")
-            self.is_secure = False
-            self.session = None
-            self.peripheral = None
+            self.disconnect()
             return False
 
         if(response != None):
@@ -349,23 +346,6 @@ class Lock:
         else:
             logging.warning("Got NONE status :(")
             return False
-        #if(not self.statusEvent.wait(5)):
-        #    logging.warning("Notification Timed out")
-
-        # strstatus = 'unknown'
-        # if self.status == 0x02:
-        #     strstatus = 'unlocking'
-        # elif self.status == 0x03:
-        #     strstatus = 'unlocked'
-        # elif self.status == 0x04:
-        #     strstatus = 'locking'
-        # elif self.status == 0x05:
-        #     strstatus = 'locked'
-
-        # if strstatus == 'unknown':
-        #     logging.warning("Unrecognized status code: " + hex(self.status))
-
-        # return self.parseStatus()
 
     def parseStatus(self):
         strstatus = 'unknown'
@@ -396,12 +376,12 @@ class Lock:
 
 
         try:
+            if self.session is None:
+                raise Exception("Session is None! getVoltage failed.")
             response = self.session.execute(cmd)
         except btle.BTLEDisconnectError:
             logging.error("Device disconnected unexpectedly during getVoltage!")
-            self.is_secure = False
-            self.session = None
-            self.peripheral = None
+            self.disconnect()
             return False
 
         if(response != None):
@@ -424,32 +404,31 @@ class Lock:
         cmd[0x04] = 0x05 #battery %
         #cmd[0x04] = 0x0F #batteryVoltage
         #cmd[0x10] = 0x02
-
+        if self.session is None:
+            raise Exception("Session is None! getVoltage failed.")
         response = self.session.execute(cmd)
         battery = response[0x08]
 
         return battery
 
     def disconnect(self):
-        self.keepAlive.stop()
-        self.session.notificationProcessor.stop() #stop the notification processor thread
-        self.session.notificationProcessor.join() #wait for notification processor thread to terminate
-
-        if self.is_secure:
-            cmd = self.secure_session.build_command(0x05)
-            cmd[0x11] = 0x00
-            self.secure_session.execute_nr(cmd)
-            #logging.info("disconnect response:",response)
-            #if response[0] != 0x8b:
-            #    raise Exception("Unexpected response to DISCONNECT: " +
-            #                    response.hex())
+        try:
+            self.conn_state = "disconnected"
 
 
-        self.peripheral.disconnect() #should probably put this line in a try/except
-        self.is_secure = False
-        self.session = None
-        self.peripheral = None
-        logging.warning('Disconnected...')
+
+            if self.session is not None:
+                if self.session.notificationProcessor is not None:
+                    self.session.notificationProcessor.stop()
+                    self.session.notificationProcessor.should_abort_immediately = True 
+            self.is_secure = False
+            self.session = None
+            if self.peripheral is not None:
+                self.peripheral.disconnect() #should probably put this line in a try/except
+                self.peripheral = None
+            logging.info('Disconnected cleanly...')
+        except Exception as e:
+            logging.error(f"An error occurred during disconnect: {e}")
         return True
 
     def led_G(self):
@@ -464,7 +443,7 @@ class Lock:
 
     def is_connected(self):
         return type(self.session) is session.Session \
-            and self.is_secure
+            and self.is_secure and self.conn_state == "connected"
 
         #return type(self.session) is session.Session \
         #    and self.peripheral.addr is not None
